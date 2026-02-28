@@ -1,0 +1,60 @@
+import pandas as pd
+
+data=pd.read_csv('eurusd_hour.csv')
+print(data.head())
+print(data.info())
+
+
+data['Datetime'] = pd.to_datetime(data['Date'] + ' ' + data['Time'])
+print(data['Datetime'].dtype)
+
+data = data.drop(['Date', 'Time'], axis=1)
+
+data = data.sort_values('Datetime')
+data = data.reset_index(drop=True)
+
+# print(data['Date'].dtype)
+# data['Date'] = pd.to_datetime(data['Date'])
+# print(data['Date'].dtype)
+
+# data = data.sort_values(by='Date')
+# data = data.reset_index(drop=True)
+
+print(data.isnull().sum())
+data = data.dropna()
+
+print(data.duplicated().sum())
+
+print(data.dtypes)
+print(data.info())
+print(data.describe())
+
+data['Close'] = data['BC']
+
+print(data.info())
+print(data.head())
+
+print(data['Datetime'].diff().value_counts().head())
+
+# Create Target (Up / Down)
+data['Target'] = (data['Close'].shift(-1) > data['Close']).astype(int)
+
+# 1 → Next hour price goes UP
+# 0 → Next hour price goes DOWN
+
+
+# Create Moving Averages
+data['MA_5'] = data['Close'].rolling(5).mean()
+data['MA_10'] = data['Close'].rolling(10).mean()
+data['MA_20'] = data['Close'].rolling(20).mean()
+
+# Create Volatility
+data['Volatility'] = data['Close'].rolling(10).std()
+
+# create RSI
+from ta.momentum import RSIIndicator
+rsi = RSIIndicator(close=data['Close'], window=14)
+data['RSI'] = rsi.rsi()
+
+# Remove NaN from rolling calculations
+data = data.dropna()
