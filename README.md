@@ -4,6 +4,6 @@ This project predicts currency exchange trends using historical Forex data.
 
 ## Features
 - Moving averages, RSI, volatility indicators
-- Predicts if next day is profitable (classification)
-- Uses Logistic Regression (beginner-friendly)
+- Predicts if next day is profitable 
+- Uses Logistic Regression 
 - Time series analysis and visualization
