@@ -1,108 +1,204 @@
+import os
+
+import matplotlib
+import matplotlib.pyplot as plt
 import pandas as pd
-
-data=pd.read_csv('eurusd_hour.csv')
-print(data.head())
-print(data.info())
-
-
-data['Datetime'] = pd.to_datetime(data['Date'] + ' ' + data['Time'])
-print(data['Datetime'].dtype)
-
-data = data.drop(['Date', 'Time'], axis=1)
-
-data = data.sort_values('Datetime')
-data = data.reset_index(drop=True)
-
-# print(data['Date'].dtype)
-# data['Date'] = pd.to_datetime(data['Date'])
-# print(data['Date'].dtype)
-
-# data = data.sort_values(by='Date')
-# data = data.reset_index(drop=True)
-
-print(data.isnull().sum())
-data = data.dropna()
-
-print(data.duplicated().sum())
-
-print(data.dtypes)
-print(data.info())
-print(data.describe())
-
-data['Close'] = data['BC']
-
-print(data.info())
-print(data.head())
-
-print(data['Datetime'].diff().value_counts().head())
-
-# Create Target (Up / Down)
-data['Target'] = (data['Close'].shift(-1) > data['Close']).astype(int)
-
-# 1 → Next hour price goes UP
-# 0 → Next hour price goes DOWN
-
-
-# Create Moving Averages
-data['MA_5'] = data['Close'].rolling(5).mean()
-data['MA_10'] = data['Close'].rolling(10).mean()
-data['MA_20'] = data['Close'].rolling(20).mean()
-
-# Create Volatility
-data['Volatility'] = data['Close'].rolling(10).std()
-
-# create RSI
-from ta.momentum import RSIIndicator
-rsi = RSIIndicator(close=data['Close'], window=14)
-data['RSI'] = rsi.rsi()
-
-# Remove NaN from rolling calculations
-data = data.dropna()
-
-features = ['MA_5', 'MA_10', 'MA_20', 'Volatility', 'RSI']
-X = data[features]
-y = data['Target']
-
-# Train-Test Split
-from sklearn.model_selection import train_test_split
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, shuffle=False
-)
-
-# Scale Features
-from sklearn.preprocessing import StandardScaler
-
-scaler = StandardScaler()
-
-X_train = scaler.fit_transform(X_train)
-X_test = scaler.transform(X_test)
-
-# Train Logistic Regression
-from sklearn.linear_model import LogisticRegression
-
-model = LogisticRegression()
-model.fit(X_train, y_train)
-
-# Predict
-y_pred = model.predict(X_test)  
-
-# Evaluate
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
-
-print("Accuracy:", accuracy_score(y_test, y_pred))
-print("\nConfusion Matrix:\n", confusion_matrix(y_test, y_pred))
-print("\nClassification Report:\n", classification_report(y_test, y_pred))
-
-# Check Class Balance
-print(y.value_counts(normalize=True))
-
-# Compare With Random Forest
+import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from ta.momentum import RSIIndicator
 
-rf = RandomForestClassifier(n_estimators=100)
-rf.fit(X_train, y_train)
+matplotlib.use("Agg")
 
-y_pred_rf = rf.predict(X_test)
 
-print("RF Accuracy:", accuracy_score(y_test, y_pred_rf))
+def load_and_prepare_data(csv_path: str) -> pd.DataFrame:
+    data = pd.read_csv(csv_path)
+
+    data["Datetime"] = pd.to_datetime(data["Date"] + " " + data["Time"])
+    data = data.drop(["Date", "Time"], axis=1)
+    data = data.sort_values("Datetime").reset_index(drop=True)
+    data = data.dropna()
+
+    if "BC" in data.columns:
+        data["Close"] = data["BC"]
+    elif "Close" not in data.columns:
+        raise ValueError("Expected either 'BC' or 'Close' column in CSV.")
+
+    data["Target"] = (data["Close"].shift(-1) > data["Close"]).astype(int)
+    data["MA_5"] = data["Close"].rolling(5).mean()
+    data["MA_10"] = data["Close"].rolling(10).mean()
+    data["MA_20"] = data["Close"].rolling(20).mean()
+    data["Volatility"] = data["Close"].rolling(10).std()
+    data["RSI"] = RSIIndicator(close=data["Close"], window=14).rsi()
+    data["Return"] = data["Close"].pct_change()
+
+    data["Close_lag1"] = data["Close"].shift(1)
+    data["Close_lag2"] = data["Close"].shift(2)
+    data["Close_lag3"] = data["Close"].shift(3)
+    data["RSI_lag1"] = data["RSI"].shift(1)
+    data["RSI_lag2"] = data["RSI"].shift(2)
+    data["Vol_lag1"] = data["Volatility"].shift(1)
+    data["Momentum"] = data["Close"] - data["Close_lag1"]
+    data["MA_diff"] = data["MA_5"] - data["MA_20"]
+
+    data = data.dropna().reset_index(drop=True)
+    return data
+
+
+def create_visualizations(
+    data: pd.DataFrame,
+    test_index: pd.Index,
+    y_test: pd.Series,
+    y_pred: pd.Series,
+    probs: pd.Series,
+    output_dir: str,
+) -> None:
+    os.makedirs(output_dir, exist_ok=True)
+    sns.set_theme(style="whitegrid")
+
+    plt.figure(figsize=(14, 6))
+    sample = data.tail(400)
+    plt.plot(sample["Datetime"], sample["Close"], label="Close", linewidth=1.5)
+    plt.plot(sample["Datetime"], sample["MA_5"], label="MA_5", alpha=0.9)
+    plt.plot(sample["Datetime"], sample["MA_20"], label="MA_20", alpha=0.9)
+    plt.title("EUR/USD Price with Moving Averages (Recent 400 Hours)")
+    plt.xlabel("Datetime")
+    plt.ylabel("Price")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "price_with_moving_averages.png"), dpi=150)
+    plt.close()
+
+    plt.figure(figsize=(6, 4))
+    sns.countplot(x="Target", data=data, color="#4c72b0")
+    plt.title("Target Class Distribution")
+    plt.xlabel("Target (0=Down, 1=Up)")
+    plt.ylabel("Count")
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "target_distribution.png"), dpi=150)
+    plt.close()
+
+    cm = confusion_matrix(y_test, y_pred)
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False)
+    plt.title("Confusion Matrix")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "confusion_matrix.png"), dpi=150)
+    plt.close()
+
+    pred_frame = data.loc[test_index, ["Datetime"]].copy()
+    pred_frame["Actual"] = y_test.values
+    pred_frame["Predicted_Prob_Up"] = probs
+
+    plt.figure(figsize=(14, 5))
+    plot_sample = pred_frame.tail(250)
+    plt.plot(
+        plot_sample["Datetime"],
+        plot_sample["Predicted_Prob_Up"],
+        label="Predicted P(Up)",
+        color="purple",
+    )
+    plt.axhline(0.5, linestyle="--", color="red", linewidth=1, label="Threshold 0.5")
+    plt.title("Model Prediction Probability Over Time (Test Set)")
+    plt.xlabel("Datetime")
+    plt.ylabel("Probability")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "prediction_probability_over_time.png"), dpi=150)
+    plt.close()
+
+
+def main() -> None:
+    data = load_and_prepare_data("eurusd_hour.csv")
+
+    features = [
+        "MA_5",
+        "MA_10",
+        "MA_20",
+        "Volatility",
+        "RSI",
+        "Close_lag1",
+        "Close_lag2",
+        "Close_lag3",
+        "RSI_lag1",
+        "RSI_lag2",
+        "Vol_lag1",
+        "Momentum",
+        "Return",
+        "MA_diff",
+    ]
+
+    X = data[features]
+    y = data["Target"]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, shuffle=False
+    )
+
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    baseline_features = ["MA_5", "MA_10", "MA_20", "Volatility", "RSI"]
+    X_base = data[baseline_features]
+    Xb_train, Xb_test, yb_train, yb_test = train_test_split(
+        X_base, y, test_size=0.2, shuffle=False
+    )
+    baseline_scaler = StandardScaler()
+    Xb_train_scaled = baseline_scaler.fit_transform(Xb_train)
+    Xb_test_scaled = baseline_scaler.transform(Xb_test)
+
+    baseline_model = LogisticRegression(max_iter=1000)
+    baseline_model.fit(Xb_train_scaled, yb_train)
+    y_pred_baseline = baseline_model.predict(Xb_test_scaled)
+
+    print("Accuracy:", accuracy_score(yb_test, y_pred_baseline))
+    print("\nConfusion Matrix:\n", confusion_matrix(yb_test, y_pred_baseline))
+    print("\nClassification Report:\n", classification_report(yb_test, y_pred_baseline))
+    print("\nClass Balance:\n", y.value_counts(normalize=True))
+
+    rf_sample_size = min(20000, len(Xb_train_scaled))
+    Xb_train_rf = Xb_train_scaled[-rf_sample_size:]
+    yb_train_rf = yb_train.iloc[-rf_sample_size:]
+
+    rf_model = RandomForestClassifier(
+        n_estimators=10, max_depth=8, random_state=42, n_jobs=1
+    )
+    rf_model.fit(Xb_train_rf, yb_train_rf)
+    y_pred_rf = rf_model.predict(Xb_test_scaled)
+    print("\nRF Accuracy:", accuracy_score(yb_test, y_pred_rf))
+
+    model = HistGradientBoostingClassifier(max_iter=100, random_state=42)
+    model.fit(X_train_scaled, y_train)
+
+    y_pred = model.predict(X_test_scaled)
+    probs = model.predict_proba(X_test_scaled)[:, 1]
+
+    print("GB Accuracy:", accuracy_score(y_test, y_pred))
+    print("\nConfusion Matrix:\n", confusion_matrix(y_test, y_pred))
+    print("\nClassification Report:\n", classification_report(y_test, y_pred))
+
+    create_visualizations(
+        data=data,
+        test_index=X_test.index,
+        y_test=y_test,
+        y_pred=y_pred,
+        probs=probs,
+        output_dir="plots",
+    )
+    print("\nSaved visualizations to: plots/")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
