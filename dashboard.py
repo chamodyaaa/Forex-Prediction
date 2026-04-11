@@ -1,6 +1,7 @@
 import pandas as pd
 import seaborn as sns
 import streamlit as st
+import streamlit.components.v1 as components
 import matplotlib.pyplot as plt
 from ta.momentum import RSIIndicator
 from sklearn.model_selection import train_test_split
@@ -193,6 +194,33 @@ def plot_prediction_probabilities(data: pd.DataFrame, test_index, probs, recent_
     return fig
 
 
+def render_tradingview_widget(symbol: str, interval: str, widget_height: int, theme: str = "light"):
+    html = f"""
+    <div class="tradingview-widget-container" style="height:{widget_height}px;width:100%;">
+        <div id="tradingview_chart" style="height:{widget_height}px;width:100%;"></div>
+        <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+        <script type="text/javascript">
+            new TradingView.widget({{
+                "autosize": true,
+                "symbol": "{symbol}",
+                "interval": "{interval}",
+                "timezone": "Etc/UTC",
+                "theme": "{theme}",
+                "style": "1",
+                "locale": "en",
+                "toolbar_bg": "#f1f3f6",
+                "enable_publishing": false,
+                "hide_top_toolbar": false,
+                "hide_legend": false,
+                "save_image": false,
+                "container_id": "tradingview_chart"
+            }});
+        </script>
+    </div>
+    """
+    components.html(html, height=widget_height + 25, scrolling=False)
+
+
 def main():
     st.title("Forex Prediction Dashboard")
     st.caption("Interactive dashboard for model outputs and visual analysis")
@@ -216,6 +244,25 @@ def main():
         )
         test_size = st.slider("Test size", min_value=0.1, max_value=0.4, value=0.2, step=0.05)
         recent_points = st.slider("Recent rows for charts", min_value=100, max_value=1000, value=400, step=50)
+        show_tradingview = st.checkbox("Show TradingView chart", value=True)
+        tradingview_symbols = {
+            "EUR/USD (OANDA)": "OANDA:EURUSD",
+            "GBP/USD (OANDA)": "OANDA:GBPUSD",
+            "USD/JPY (OANDA)": "OANDA:USDJPY",
+            "Gold (OANDA)": "OANDA:XAUUSD",
+        }
+        tradingview_symbol = st.selectbox(
+            "TradingView symbol",
+            options=list(tradingview_symbols.keys()),
+            index=0,
+        )
+        tradingview_interval = st.selectbox(
+            "TradingView timeframe",
+            options=["15", "60", "240", "D"],
+            index=1,
+        )
+        tradingview_height = st.slider("TradingView height", min_value=600, max_value=1100, value=850, step=50)
+        tradingview_symbol = tradingview_symbols[tradingview_symbol]
 
     if isinstance(date_range, tuple) and len(date_range) == 2:
         start_date, end_date = date_range
@@ -237,6 +284,10 @@ def main():
     c1.metric("Logistic Accuracy", f"{results['baseline_accuracy']:.4f}")
     c2.metric("RF Accuracy", f"{results['rf_accuracy']:.4f}")
     c3.metric("GB Accuracy", f"{results['gb_accuracy']:.4f}")
+
+    if show_tradingview:
+        st.subheader("TradingView Chart")
+        render_tradingview_widget(tradingview_symbol, tradingview_interval, tradingview_height)
 
     st.subheader("Class Balance")
     st.dataframe(results["class_balance"].rename("proportion"))
