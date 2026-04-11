@@ -16,28 +16,10 @@ It then trains multiple models to estimate whether the next candle will move up 
 
 ## Features
 
-- Technical indicator engineering for Forex data
-- Logistic Regression baseline model
-- Random Forest model
-- Histogram-based Gradient Boosting model
-- Accuracy, confusion matrix, and classification report outputs
-- Prediction probability over time visualization
-- Interactive Streamlit dashboard
-- Embedded TradingView chart with symbol and timeframe controls
-
-## Requirements
-
-Install the Python packages used by the project:
-
-```bash
-pip install pandas seaborn streamlit matplotlib scikit-learn ta
-```
-
-## Data File
-
-The project expects the CSV file `eurusd_hour.csv` to be in the project root.
-
-The file should contain at least:
+- Moving averages, RSI, volatility indicators
+- Predicts if next day is profitable 
+- Uses Logistic Regression 
+- Time series analysis and visualization
 
 - `Date`
 - `Time`
